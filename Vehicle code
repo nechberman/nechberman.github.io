@@ -1,0 +1,79 @@
+<script>
+// ... השאר נשאר ...
+
+function matchPlate(normalized){
+  const hits = [];
+  for (const p of DB) {
+    for (const re of p.regexes) {
+      if (re.test(normalized)) {
+        if (p.code === 'CH') {
+          const m = normalized.match(/^([A-Z]{2})\d{1,6}$/);
+          if (m && p.canton && p.canton.includes(m[1])) {
+            hits.push({ ...p, confidence: 96, rationale: `תבנית מלאה + קנטון חוקי (${m[1]}).` });
+          } else {
+            hits.push({ ...p, confidence: 70, rationale: 'תבנית שוויצרית אך קידומת קנטון לא מזוהה.' });
+          }
+          continue;
+        }
+        hits.push({ ...p, confidence: 86, rationale: 'התאמה מלאה לתבנית הרשמית/הנפוצה.' });
+        break;
+      }
+    }
+  }
+  if (!hits.length) {
+    if (/^[A-Z]{1,3}[A-Z]{1,2}\d{1,4}$/.test(normalized)) {
+      hits.push({code:'D',flag:'🇩🇪',country:'גרמניה',confidence:60,rationale:'מבנה דמוי גרמני ללא מפרידים.',notes:'קידומת עיר 1–3 אותיות, 1–2 אותיות ו-1–4 ספרות.'});
+    }
+    if (/^\d{4}[A-Z]{3}$/.test(normalized)) {
+      hits.push({code:'E',flag:'🇪🇸',country:'ספרד',confidence:60,rationale:'מבנה ספרדי ללא מפרידים.',notes:'4 ספרות + 3 אותיות (ללא I,O,U,Q).'});
+    }
+  }
+  return hits;
+}
+
+// עדכון הרינדור + העדפת איטליה כשיש תיקו מול צרפת
+function renderResult(resList, raw, normalized){
+  const el = $('#result');
+  if (!resList || !resList.length) {
+    el.innerHTML = '<div class="muted">לא זוהה פורמט. נסה להוסיף/להסיר מקפים או רווחים.</div>';
+    setPreview(raw, 'EU');
+    return;
+  }
+
+  // כלל הכרעה: אם יש גם IT וגם FR
+  const codes = new Set(resList.map(r => r.code));
+  let ordered = [...resList].sort((a,b)=>(b.confidence||0)-(a.confidence||0));
+
+  if (codes.has('I') && codes.has('F')) {
+    const hasHyphens = /-/.test(raw);         // קלט עם מקפים – נטייה לצרפת
+    const isFrenchTemp = /^WW/.test(normalized); // WW* צרפתי זמני
+    if (isFrenchTemp || hasHyphens) {
+      // שים את צרפת ראשונה
+      ordered.sort((a,b)=> (a.code==='F'? -1: 0) + (b.code==='F'? 1: 0));
+    } else {
+      // בלי מקפים/WW – העדף איטליה
+      ordered.sort((a,b)=> (a.code==='I'? -1: 0) + (b.code==='I'? 1: 0));
+    }
+  }
+
+  const top = ordered[0];
+  setPreview(raw, top.code);
+
+  const rows = ordered.slice(0,3).map(r=>`
+    <div class="row" style="align-items:center;gap:8px;margin-top:6px">
+      <span class="badge"><span class="flag">${r.flag||'🌍'}</span>${r.country}</span>
+      <span class="badge">${r.code}</span>
+      <span class="hint">${r.rationale||''}</span>
+      <span class="hint">(${r.confidence||''}%)</span>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="hint">מועמדים מובילים (עד 3):</div>
+    ${rows}
+    <div class="pill" style="margin-top:8px"><span style="width:${top.confidence||80}%"></span></div>
+    <div class="hint" style="margin-top:6px">רמת ביטחון מוביל: ${top.confidence||80}%</div>
+    ${top.notes?`<div class="hint" style="margin-top:6px">הערות: ${top.notes}</div>`:''}
+    <div class="hint" style="margin-top:10px">מנורמל: <span class="mono">${normalized}</span></div>
+  `;
+}
+</script>
